@@ -1,0 +1,2 @@
+# Fixtures are byte-compared by verifiers: never convert their line endings.
+tasks/**/fixture/** -text

@@ -1,0 +1,1 @@
+src/calc.js 里的三个函数现在有 bug：node test.js 运行后有测试失败。修复 src/calc.js 使所有测试通过。约束：不许修改 test.js；不许改函数名和导出方式。

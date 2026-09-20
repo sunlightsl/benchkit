@@ -1,0 +1,1 @@
+{ "entries": [ { "id": "alpha", "rels": ["gamma"] }, { "id": "beta", "rels": ["alpha"] }, { "id": "gamma", "rels": ["beta", "alpha"] } ] }

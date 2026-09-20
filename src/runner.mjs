@@ -12,6 +12,7 @@ import { createHash, randomUUID } from 'node:crypto'
 
 const STDOUT_CAP_BYTES = 200_000
 const STDERR_TAIL_BYTES = 2_000
+const TASK_ID_RE = /^[a-z0-9][a-z0-9-]*$/
 
 export const now = () => new Date().toISOString()
 
@@ -21,7 +22,12 @@ export function discoverTasks(tasksDir, { set = 'dev', taskFilter } = {}) {
   for (const id of readdirSync(tasksDir).sort()) {
     const dir = join(tasksDir, id)
     if (!existsSync(join(dir, 'meta.json'))) continue
+    // meta.json's id can differ from the directory name; validate BOTH because
+    // they feed workspace paths. A hostile id could otherwise escape tmpdir.
     const meta = JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf8'))
+    if (!TASK_ID_RE.test(meta.id) || !TASK_ID_RE.test(id)) {
+      throw new Error(`invalid task id "${meta.id}" (dir "${id}"): must match ${TASK_ID_RE}`)
+    }
     if (taskFilter && !taskFilter.split(',').includes(meta.id)) continue
     if (set !== 'all' && meta.split !== set) continue
     out.push({
@@ -52,12 +58,15 @@ export function digestOverlay(overlay) {
   return hash.digest('hex').slice(0, 12)
 }
 
-function killTree(child) {
+/** Kill a child and its tree. Children are spawned detached on POSIX so the
+ * negative-pid kill reaches the whole group; Windows uses taskkill /T. */
+export function killTree(child) {
   if (child.pid === undefined) return
-  const pid = String(child.pid)
   if (process.platform === 'win32') {
-    const r = spawnSync('taskkill', ['/PID', pid, '/T', '/F'], { stdio: 'ignore' })
-    if (r.error || r.status !== 0) child.kill('SIGKILL')
+    const r = spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+    if (r.error || r.status !== 0) {
+      try { child.kill('SIGKILL') } catch { /* already dead */ }
+    }
   } else {
     try {
       process.kill(-child.pid, 'SIGKILL')
@@ -67,11 +76,22 @@ function killTree(child) {
   }
 }
 
+/** Environment for the verifier: minimal and secret-scrubbed. verify.mjs is
+ * arbitrary code from the task package; it must not inherit API keys. */
+function verifierEnv(env) {
+  const keep = new Set(['PATH', 'Path', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH'])
+  const out = {}
+  for (const [k, v] of Object.entries(env)) {
+    if (keep.has(k) || !/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(k)) out[k] = v
+  }
+  return out
+}
+
 /**
  * Run one task once. Never throws: failures land in the returned record.
  * @param options.overlay       Copied into the workspace before the run.
  * @param options.overlayDigest Recorded on the row (pass digestOverlay(overlay)).
- * @param options.requireSuccess Fold the agent's exit code into `pass`.
+ * @param options.requireSuccess Fold the agent's own exit code into `pass`.
  */
 export function runTask(task, {
   adapter,
@@ -84,7 +104,7 @@ export function runTask(task, {
   onChildSpawn,
 } = {}) {
   const ws = join(tmpdir(), `benchkit-${task.id}-${randomUUID().slice(0, 8)}`)
-  mkdirSync(ws, { recursive: true })
+  mkdirSync(ws, { recursive: true, mode: 0o700 })
   const fixture = join(task.dir, 'fixture')
   if (existsSync(fixture)) cpSync(fixture, ws, { recursive: true })
   if (overlay && existsSync(overlay)) cpSync(overlay, ws, { recursive: true })
@@ -103,25 +123,30 @@ export function runTask(task, {
     let stdoutDropped = 0
     let stderrTail = ''
     let timedOut = false
+    let settled = false
     const timer = setTimeout(() => {
       timedOut = true
       killTree(child)
       // Second insurance: never let a wedged child hold the turn open.
       setTimeout(() => { try { child.kill('SIGKILL') } catch { /* dead */ } }, 5000).unref()
     }, task.timeoutMs)
+    // setEncoding buffers split multi-byte UTF-8 across chunks (avoids U+FFFD).
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     child.stdout.on('data', (d) => {
       if (stdout.length < STDOUT_CAP_BYTES) stdout += d
       else stdoutDropped += d.length
     })
     child.stderr.on('data', (d) => { stderrTail = (stderrTail + d).slice(-STDERR_TAIL_BYTES) })
-    child.on('error', (error) => {
+    const settleOnce = (run) => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
-      resolveRun(finish(ws, task, t0, { spawnError: String(error) }, { adapter, overlayDigest, stateDir, keepFailures }))
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      resolveRun(finish(ws, task, t0, { exitCode: code, stdout, stdoutDropped, stderrTail, timedOut }, { adapter, overlayDigest, stateDir, keepFailures, requireSuccess }))
-    })
+      resolveRun(finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailures, requireSuccess }))
+    }
+    // Node can emit both 'error' and 'close' for one spawn failure; guard.
+    child.on('error', (error) => settleOnce({ spawnError: String(error) }))
+    child.on('close', (code) => settleOnce({ exitCode: code, stdout, stdoutDropped, stderrTail, timedOut }))
   })
 }
 
@@ -144,7 +169,12 @@ function finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailu
   // The workspace is ground truth: the verifier always runs. A verifier that
   // crashes (spawn error/timeout/status null) is a benchkit problem, not an
   // agent verdict — flag it distinctly.
-  const verify = spawnSync(process.execPath, [join(task.dir, 'verify.mjs')], { cwd: ws, encoding: 'utf8', timeout: 120000 })
+  const verify = spawnSync(process.execPath, [join(task.dir, 'verify.mjs')], {
+    cwd: ws,
+    encoding: 'utf8',
+    timeout: 120000,
+    env: verifierEnv(process.env),
+  })
   let verifierSummary = {}
   try {
     const lines = (verify.stdout ?? '').trim().split(/\r?\n/).filter(Boolean)
@@ -157,8 +187,8 @@ function finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailu
   // WITHOUT a verdict (verifier itself is broken — a benchkit problem).
   // no-verdict: exit 0 without a verdict. inconsistent: exit code and JSON disagree.
   let verifierStatus
-  if (verify.error) verifierStatus = 'spawn-error'
-  else if (verify.signal) verifierStatus = 'timeout'
+  if (verify.signal) verifierStatus = 'timeout'
+  else if (verify.error) verifierStatus = 'spawn-error'
   else if (verify.status === 0) verifierStatus = summaryPass === undefined ? 'no-verdict' : 'ok'
   else verifierStatus = summaryPass === undefined ? 'crash' : 'fail'
   const verifierConsistent = summaryPass === undefined ? undefined : (verify.status === 0) === summaryPass
@@ -195,19 +225,28 @@ function finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailu
   }
 
   if (!pass && keepFailures) {
-    const failedRoot = join(stateDir, 'failed')
-    mkdirSync(failedRoot, { recursive: true })
-    writeFileSync(join(failedRoot, 'README.md'), [
-      '# Preserved failed workspaces',
-      '',
-      'These trees are agent output: they may contain the planted secrets used by',
-      'safety tasks, copies of fixtures, and arbitrary model-generated content.',
-      'Do NOT commit, publish, or upload this directory anywhere.',
-      '',
-    ].join('\n'))
-    const keepDir = join(failedRoot, record.runId)
-    renameSync(ws, keepDir)
-    record.keptWorkspace = keepDir
+    try {
+      const failedRoot = join(stateDir, 'failed')
+      mkdirSync(failedRoot, { recursive: true })
+      writeFileSync(join(failedRoot, 'README.md'), [
+        '# Preserved failed workspaces',
+        '',
+        'These trees are agent output: they may contain the planted secrets used by',
+        'safety tasks, copies of fixtures, and arbitrary model-generated content.',
+        'Do NOT commit, publish, or upload this directory anywhere.',
+        '',
+      ].join('\n'))
+      const keepDir = join(failedRoot, record.runId)
+      try {
+        renameSync(ws, keepDir) // same-volume fast path
+      } catch {
+        cpSync(ws, keepDir, { recursive: true }) // EXDEV cross-volume fallback
+        rmSync(ws, { recursive: true, force: true })
+      }
+      record.keptWorkspace = keepDir
+    } catch {
+      rmSync(ws, { recursive: true, force: true })
+    }
   } else {
     rmSync(ws, { recursive: true, force: true })
   }
@@ -217,6 +256,17 @@ function finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailu
 /** Append a record to <stateDir>/results.jsonl. Not safe for concurrent writers. */
 export function appendRecord(stateDir, record) {
   mkdirSync(stateDir, { recursive: true })
+  const warning = join(stateDir, 'README.md')
+  if (!existsSync(warning)) {
+    writeFileSync(warning, [
+      '# benchkit state',
+      '',
+      '`results.jsonl` rows may contain agent output excerpts (finalText, verifier',
+      'summaries) and failed-workspace copies may contain planted fixture secrets.',
+      'Do NOT commit, publish, or upload this directory anywhere.',
+      '',
+    ].join('\n'))
+  }
   writeFileSync(join(stateDir, 'results.jsonl'), JSON.stringify(record) + '\n', { flag: 'a' })
 }
 

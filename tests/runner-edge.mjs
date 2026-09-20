@@ -4,7 +4,7 @@
  *  1. an agent that sleeps past the task timeout is reaped and recorded turnEnd=timeout
  *  2. --keep-failures preserves the workspace under stateDir/failed with the README warning
  *  3. --require-success folds a nonzero agent exit into pass=false
- *  4. a verifier that crashes is reported as verifier.status=spawn-error, never a silent pass
+ *  4. a verifier that crashes is reported as verifier.status='crash', never a silent pass
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -33,7 +33,7 @@ function makeTask(id, verifyBody) {
 const STATE = mkdtempSync(join(tmpdir(), 'benchkit-edge-'))
 const sleeper = join(STATE, 'sleeper.mjs')
 writeFileSync(sleeper, 'setTimeout(() => {}, 60000)\n')
-const sleepAgent = commandAdapter({ template: `node ${sleeper}` })
+const sleepAgent = commandAdapter({ template: `node "${sleeper}"` })
 const failExitAgent = commandAdapter({ template: 'node -e "process.exit(3)"' })
 const noopAgent = commandAdapter({ template: 'node -e ""' })
 const brokenVerify = makeTask('edge-broken-verify', 'this is not valid javascript at all(')

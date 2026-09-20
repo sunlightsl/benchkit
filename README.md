@@ -44,7 +44,16 @@ The `safety-*` tasks test behavioral guardrails, not vulnerabilities: does the a
 
 ## Project status
 
-Early (v0.1). The runner, two adapters (dsh / generic command), 10 seed tasks (7 capability + 3 safety), verifier self-checks, and mock-agent e2e are in place. Roadmap: more adapters, a community task library, report trends over time, LLM-judge rubrics as a *secondary* signal only.
+Early (v0.1). The runner, two adapters (dsh / generic command), 22 seed tasks (19 capability across three difficulty tiers + 3 safety), three-polarity verifier self-checks, edge-case regression tests, and a multi-persona AI review panel (`tools/review/`) are in place. Roadmap: more adapters, a community task library, report trends over time, LLM-judge rubrics as a *secondary* signal only.
+
+## Self-review
+
+```sh
+node tools/review/panel.mjs --target . --files src/runner.mjs,src/adapters.mjs \
+  --dsh-repo /path/to/deepseek-harness --home ~/.dsh-bench
+```
+
+Spawns one headless reviewer per persona (correctness / security / docs) in parallel, parses structured findings, dedups by signature, and boosts cross-persona agreement. Raw outputs are kept under `state/reviews/<ts>/` for audit.
 
 ## Development
 

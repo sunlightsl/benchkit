@@ -19,6 +19,7 @@
  */
 
 import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { dshAdapter, commandAdapter } from '../src/adapters.mjs'
 import { abs, appendRecord, digestOverlay, discoverTasks, runTask, writeReport } from '../src/runner.mjs'
@@ -37,7 +38,34 @@ function dieUsage(msg) {
   process.exit(2)
 }
 
-if (command !== 'run') dieUsage(`unknown command ${command} (only "run")`)
+const USAGE = `benchkit — regression testing for agent configurations
+
+Usage:
+  node bin/benchkit.mjs run --adapter dsh --dsh-repo <abs path> [options]
+  node bin/benchkit.mjs run --adapter command --cmd '<template>' [options]
+
+Options:
+  --adapter dsh|command   agent integration (default dsh)
+  --dsh-repo <abs path>   deepseek-harness checkout for the dsh adapter
+  --cmd <template>        command template; {{workspace}}/{{prompt}} placeholders
+                          (no {{prompt}} = prompt piped via stdin)
+  --home <path>           DSH_HOME for the dsh adapter
+  --tasks-dir <path>      task library (default <kit>/tasks)
+  --state-dir <path>      results + reports (default <cwd>/state)
+  --task a,b,c            run only these task ids
+  --set dev|heldout|all   task split (default dev)
+  --repeat N              repetitions per task (default 1)
+  --overlay <dir>         copied into every run workspace (config under test)
+  --tag <tag>             recorded on every result row
+  --keep-failures         preserve failed workspaces under <state-dir>/failed
+  --require-success       fold the agent's exit code into pass
+`
+
+if (command !== 'run' || flag('help') || flag('h')) {
+  if (command === 'run' && !flag('help') && !flag('h')) dieUsage(`unknown command ${command} (only "run")`)
+  console.log(USAGE)
+  process.exit(0)
+}
 
 const SET = arg('set', 'dev')
 if (!['dev', 'heldout', 'all'].includes(SET)) dieUsage(`--set must be dev|heldout|all, got "${SET}"`)
@@ -48,6 +76,7 @@ const TASKS_DIR = abs(process.cwd(), arg('tasks-dir', join(KIT_ROOT, 'tasks')))
 const STATE_DIR = abs(process.cwd(), arg('state-dir', 'state'))
 const TASK_FILTER = arg('task', undefined)
 const OVERLAY = arg('overlay', undefined)
+if (OVERLAY !== undefined && !existsSync(OVERLAY)) dieUsage(`--overlay path does not exist: ${OVERLAY}`)
 const HOME = arg('home', undefined)
 const TAG = arg('tag', 'adhoc')
 const KEEP_FAILURES = flag('keep-failures')

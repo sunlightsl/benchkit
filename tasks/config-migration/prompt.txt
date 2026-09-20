@@ -1,0 +1,1 @@
+把 old.ini 转成 new.json：section（[name]）转成嵌套对象；`key = value` 解析为键值；`;` 开头的注释和空行跳过；同一 section 内重复 key 以后出现者覆盖先出现者；值类型推断：纯整数字符串转 number，true/false 转 boolean，其余保留字符串；特例：server 下的 port 最终值要乘以 2 再写入。new.json 为单行紧凑 JSON，键顺序按首次出现保留（section 顺序也按出现顺序）。文件以换行结尾。

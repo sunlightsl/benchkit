@@ -12,6 +12,12 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 
+/** Non-Windows children get their own process group so timeout can reap the tree. */
+const SPAWN_BASE = {
+  windowsHide: true,
+  get detached() { return process.platform !== 'win32' },
+}
+
 /**
  * DeepSeek Harness adapter: runs the task through `dsh --profile headless --json`.
  * Uses the built CLI so plugin resolution matches an installed consumer; the
@@ -34,7 +40,7 @@ export function dshAdapter({ repo, home } = {}) {
         cwd: workspace,
         env: home === undefined ? env : { ...env, DSH_HOME: home },
         stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
+        ...SPAWN_BASE,
       })
     },
   }
@@ -46,8 +52,8 @@ export function dshAdapter({ repo, home } = {}) {
  * The child runs with cwd = workspace.
  *
  * Security: with {{prompt}} the task text is interpolated into a shell command.
- * Task text is semi-trusted (fixtures can contain injection samples), so review
- * your template. If the template contains NO {{prompt}}, the prompt is piped to
+ * Task text is semi-trusted (fixtures can contain injection samples), so prefer
+ * the stdin mode. If the template contains NO {{prompt}}, the prompt is piped to
  * the child's stdin instead — that mode is immune to shell interpolation.
  * @param options.template - e.g. 'my-agent --cwd "{{workspace}}"' (prompt via stdin)
  */
@@ -57,13 +63,14 @@ export function commandAdapter({ template } = {}) {
   return {
     name: 'command',
     spawn({ prompt, workspace, env }) {
-      const cmd = template.split('{{workspace}}').join(workspace)
+      let cmd = template.split('{{workspace}}').join(workspace)
+      if (!viaStdin) cmd = cmd.split('{{prompt}}').join(prompt)
       const child = spawn(cmd, [], {
         cwd: workspace,
         env,
         stdio: viaStdin ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
         shell: true,
-        windowsHide: true,
+        ...SPAWN_BASE,
       })
       if (viaStdin) {
         child.stdin.write(prompt)

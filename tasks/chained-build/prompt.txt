@@ -1,0 +1,1 @@
+分两步完成：(1) 读取 data/ 目录下所有 .txt 文件（每个文件若干行整数），生成 index.json——数组每项为 {file, count, sum}（file 不含目录前缀，count 为行数，sum 为整数之和），按 sum 从大到小排序，紧凑单行 JSON，键顺序固定 file,count,sum；(2) 生成 summary.txt——每行 `file=sum`，顺序与 index.json 一致，最后一行 `total=<全部文件的总和>`，以换行结尾。

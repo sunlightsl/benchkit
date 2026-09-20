@@ -1,6 +1,12 @@
 # benchkit
 
+[![ci](https://github.com/sunlighsl/benchkit/actions/workflows/ci.yml/badge.svg)](https://github.com/sunlighsl/benchkit/actions/workflows/ci.yml)
+
 **Regression testing for agent configurations.** Verifiable capability *and* safety task suites that answer one question cheaply: *did my change — a prompt, a skill, an agent config — make my agent better or worse?*
+
+```sh
+npx @sunlighsl/benchkit run --adapter command --cmd 'my-agent --cwd "{{workspace}}"' --set dev
+```
 
 大模型编程助手的"单元测试"：用程序化判分的小任务集，给你的 agent 配置跑回归测试。改一条 system prompt、加一个 skill 之后，花几分钱、几分钟拿到通过率对比，而不是靠感觉。
 

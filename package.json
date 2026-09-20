@@ -1,16 +1,16 @@
 {
-  "name": "@sunlighsl/benchkit",
+  "name": "@sunlightsl/benchkit",
   "version": "0.3.1",
   "description": "Regression testing for agent configurations: verifiable capability and safety task suites for any coding agent.",
   "type": "module",
   "license": "MIT",
-  "author": "sunlighsl",
+  "author": "sunlightsl",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sunlighsl/benchkit.git"
+    "url": "git+https://github.com/sunlightsl/benchkit.git"
   },
-  "homepage": "https://github.com/sunlighsl/benchkit",
-  "bugs": "https://github.com/sunlighsl/benchkit/issues",
+  "homepage": "https://github.com/sunlightsl/benchkit",
+  "bugs": "https://github.com/sunlightsl/benchkit/issues",
   "engines": { "node": ">=20" },
   "bin": { "benchkit": "./bin/benchkit.mjs" },
   "scripts": {

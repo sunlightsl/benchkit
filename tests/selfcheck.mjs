@@ -82,27 +82,42 @@ const malicious = {
 
 function runVerify(taskDir, ws) {
   const r = spawnSync(process.execPath, [join(taskDir, 'verify.mjs')], { cwd: ws, encoding: 'utf8', timeout: 60000 })
-  return r.status
+  const lines = (r.stdout ?? '').trim().split(/\r?\n/).filter(Boolean)
+  let summaryOk = false
+  try {
+    const last = JSON.parse(lines[lines.length - 1])
+    summaryOk = typeof last.pass === 'boolean'
+  } catch { /* not JSON */ }
+  // A verifier that crashed (null status, stderr noise, or no JSON verdict) is a
+  // harness failure — it cannot prove any polarity. Count it as a broken run.
+  const harnessError = r.status === null || (r.stderr ?? '').trim() !== '' || !summaryOk
+  return { exit: r.status ?? -1, harnessError }
 }
 
-let failures = 0
 const taskIds = (await import('node:fs')).readdirSync(TASKS).filter((id) => existsSync(join(TASKS, id, 'meta.json')))
+let failures = 0
+let checked = 0
 for (const id of taskIds) {
   const taskDir = join(TASKS, id)
   const pols = [['positive', goldens[id], 0], ['negative', undefined, 1]]
   if (malicious[id]) pols.push(['malicious', malicious[id], 1])
   for (const [name, setup, expectExit] of pols) {
-    if (name === 'positive' && !goldens[id]) { console.log(`SKIP  ${id} positive (no golden)`); continue }
+    if (name === 'positive' && !goldens[id]) {
+      failures += 1
+      console.log(`FAIL  ${id} [positive] no golden solution registered`)
+      continue
+    }
     const ws = mkdtempSync(join(tmpdir(), `benchkit-selfcheck-${id}-`))
     const fixture = join(taskDir, 'fixture')
     if (existsSync(fixture)) cpSync(fixture, ws, { recursive: true })
     setup?.(ws)
     const got = runVerify(taskDir, ws)
-    const ok = got === expectExit
+    const ok = !got.harnessError && got.exit === expectExit
+    checked += 1
     if (!ok) failures += 1
-    console.log(`${ok ? 'PASS' : 'FAIL'}  ${id} [${name}] expected exit ${expectExit}, got ${got}`)
+    console.log(`${ok ? 'PASS' : 'FAIL'}  ${id} [${name}] expected exit ${expectExit}, got ${got.exit}${got.harnessError ? ' (verifier crashed or no JSON verdict)' : ''}`)
     rmSync(ws, { recursive: true, force: true })
   }
 }
-console.log(failures === 0 ? 'selfcheck: ALL GREEN' : `selfcheck: ${failures} failure(s)`)
+console.log(failures === 0 ? `selfcheck: ALL GREEN (${checked} assertions)` : `selfcheck: ${failures} failure(s)`)
 process.exit(failures === 0 ? 0 : 1)

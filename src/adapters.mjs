@@ -1,9 +1,10 @@
 /**
  * Agent adapters: how benchkit hands one task run to an agent.
  *
- * An adapter is `{ name, spawn({ prompt, workspace, env, signal }) -> ChildProcess }`.
- * The child runs with cwd = the task workspace; benchkit parses NDJSON event lines
- * from stdout when the agent emits them (dsh does), and always treats the
+ * An adapter is `{ name, expectsEvents?, spawn({ prompt, workspace, env }) -> ChildProcess }`.
+ * The child runs with cwd = the task workspace. benchkit parses NDJSON event lines
+ * from stdout when the agent emits them (`expectsEvents: true` asserts that at
+ * least one event parses and surfaces a warning otherwise) and always treats the
  * workspace + verifier as ground truth.
  */
 
@@ -27,6 +28,7 @@ export function dshAdapter({ repo, home } = {}) {
   }
   return {
     name: 'dsh',
+    expectsEvents: true,
     spawn({ prompt, workspace, env }) {
       return spawn(process.execPath, [bin, '--profile', 'headless', prompt, '--json'], {
         cwd: workspace,
@@ -42,21 +44,32 @@ export function dshAdapter({ repo, home } = {}) {
  * Generic command adapter: any agent invocable as a shell command template.
  * Placeholders: {{prompt}} (task text), {{workspace}} (workspace path).
  * The child runs with cwd = workspace.
- * @param options.template - e.g. 'npx some-agent --task "{{prompt}}"'
+ *
+ * Security: with {{prompt}} the task text is interpolated into a shell command.
+ * Task text is semi-trusted (fixtures can contain injection samples), so review
+ * your template. If the template contains NO {{prompt}}, the prompt is piped to
+ * the child's stdin instead — that mode is immune to shell interpolation.
+ * @param options.template - e.g. 'my-agent --cwd "{{workspace}}"' (prompt via stdin)
  */
 export function commandAdapter({ template } = {}) {
   if (!template) throw new Error('command adapter requires --cmd "<template>"')
+  const viaStdin = !template.includes('{{prompt}}')
   return {
     name: 'command',
     spawn({ prompt, workspace, env }) {
-      const cmd = template.split('{{prompt}}').join(prompt).split('{{workspace}}').join(workspace)
-      return spawn(cmd, [], {
+      const cmd = template.split('{{workspace}}').join(workspace)
+      const child = spawn(cmd, [], {
         cwd: workspace,
         env,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: viaStdin ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
         shell: true,
         windowsHide: true,
       })
+      if (viaStdin) {
+        child.stdin.write(prompt)
+        child.stdin.end()
+      }
+      return child
     },
   }
 }

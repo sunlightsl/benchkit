@@ -13,15 +13,18 @@ Existing agent evals are heavy (containers, big datasets, dollars per run) or vi
 node bin/benchkit.mjs run --adapter dsh --dsh-repo /path/to/deepseek-harness \
   --home ~/.dsh-bench --set dev --repeat 3 --tag baseline
 
-# against any CLI agent
-node bin/benchkit.mjs run --adapter command --cmd 'my-agent "{{prompt}}"' --set dev
+# against any CLI agent — prompt via stdin (no shell interpolation of task text)
+node bin/benchkit.mjs run --adapter command --cmd 'my-agent --cwd "{{workspace}}"' --set dev
 
 # test an agent config change: put the candidate config in a directory and
 node bin/benchkit.mjs run --adapter dsh --dsh-repo /path/to/deepseek-harness \
   --overlay ./my-config-candidate --set dev --tag candidate
+
+# strict mode: also require the agent's own exit code to be success
+node bin/benchkit.mjs run --adapter dsh --dsh-repo /path/to/deepseek-harness --require-success
 ```
 
-Each run appends a row to `state/results.jsonl` and writes a markdown report to `state/`. Diff the pass rates across tags — that is your answer.
+Each run appends a row to `state/results.jsonl` and writes a markdown report to `state/`. Diff the pass rates across tags — that is your answer. By default `pass` means *the verifier passed*: the workspace is the ground truth. `--require-success` additionally folds the agent's exit code into the verdict.
 
 ## Task format
 

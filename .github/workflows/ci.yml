@@ -21,3 +21,5 @@ jobs:
         run: node tests/selfcheck.mjs
       - name: end-to-end pipeline (mock agent)
         run: node tests/mock-agent-e2e.mjs
+      - name: runner edge cases (timeout, keep-failures, verifier crash)
+        run: node tests/runner-edge.mjs

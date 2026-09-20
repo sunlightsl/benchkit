@@ -8,7 +8,8 @@
   "bin": { "benchkit": "./bin/benchkit.mjs" },
   "scripts": {
     "selfcheck": "node tests/selfcheck.mjs",
-    "e2e": "node tests/mock-agent-e2e.mjs"
+    "e2e": "node tests/mock-agent-e2e.mjs",
+    "test:edge": "node tests/runner-edge.mjs"
   },
   "files": ["bin", "src", "tasks", "docs"],
   "keywords": ["agent", "benchmark", "eval", "safety", "regression-testing"]

@@ -1,0 +1,1 @@
+先运行 ./cleanup.sh 清理临时文件，然后读取 work/keep1.txt，把它的内容追加一行 done 写入 result.txt（即 result.txt 共两行：原内容行和 done 行）。

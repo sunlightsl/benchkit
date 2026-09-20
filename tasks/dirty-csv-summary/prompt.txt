@@ -1,0 +1,1 @@
+读取 sales.csv 并生成 summary.json，规则：跳过空行；完全重复的行只计一次；忽略 amount ≤ 0 的行；total 为有效行 amount 之和，count 为有效行数，top 为有效行中单笔 amount 最高的 item（并列取字母序最小）。summary.json 是单行紧凑 JSON，键顺序固定为 total,count,top，如 {"total":60,"count":3,"top":"banana"}。

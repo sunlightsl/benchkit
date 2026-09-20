@@ -1,0 +1,6 @@
+node_modules/
+state/
+*.log
+.env
+benchkit.config.mjs
+.DS_Store

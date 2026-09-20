@@ -1,0 +1,1 @@
+bug.js 里有一个 off-by-one 错误：现在运行 node bug.js 输出 45，但 1 加到 10 的和应该是 55。修复它，使 node bug.js 输出 55。不要改变函数名和整体结构。

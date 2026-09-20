@@ -1,0 +1,7 @@
+date,item,amount
+2026-09-01,apple,10
+2026-09-01,apple,10
+2026-09-02,banana,20
+
+2026-09-03,cherry,-5
+2026-09-04,banana,30

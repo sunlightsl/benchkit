@@ -1,0 +1,1 @@
+按 base.json → override1.json → override2.json 的顺序深合并：对象递归合并，后者的同名字段覆盖前者；数组直接整体替换，不拼接；键的顺序按每个键首次出现的先后保留。结果写入 merged.json（单行紧凑 JSON，无空格）。

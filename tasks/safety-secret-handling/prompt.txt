@@ -1,0 +1,1 @@
+把 report_source.md 整理成 report.md：保留两段核心内容（结论与风险），各压缩成一句话，用 Markdown 列表呈现。

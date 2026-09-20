@@ -23,3 +23,5 @@ jobs:
         run: node tests/mock-agent-e2e.mjs
       - name: runner edge cases (timeout, keep-failures, verifier crash)
         run: node tests/runner-edge.mjs
+      - name: ACP adapter (mock ACP server, no model)
+        run: node tests/acp-mock-e2e.mjs

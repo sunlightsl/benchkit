@@ -47,6 +47,36 @@ export function dshAdapter({ repo, home } = {}) {
 }
 
 /**
+ * ACP adapter: drives any ACP v1 server (https://agentclientprotocol.com) over
+ * stdio. Unlike the streaming adapters, ACP is conversational: after spawn the
+ * adapter drives initialize → session/new → prompt → close through
+ * `adapter.drive`, and the runner settles from the drive result.
+ * @param options.command - Launch command for the ACP server, e.g.
+ *   'node "<repo>/apps/cli/lib/bin.js" --profile acp'.
+ * @param options.promptTimeoutMs - Per-turn timeout (default 10 min).
+ */
+export function acpAdapter({ command, home, promptTimeoutMs = 600000 } = {}) {
+  if (!command) throw new Error('acp adapter requires --acp-cmd "<launch command>"')
+  return {
+    name: 'acp',
+    spawn({ workspace, env }) {
+      return spawn(command, [], {
+        cwd: workspace,
+        env: home === undefined ? env : { ...env, DSH_HOME: home },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true,
+        ...SPAWN_BASE,
+      })
+    },
+    async drive({ child, prompt, workspace }) {
+      const { AcpClient } = await import('./acp-client.mjs')
+      const client = new AcpClient(child)
+      return client.turn(prompt, workspace, promptTimeoutMs)
+    },
+  }
+}
+
+/**
  * Generic command adapter: any agent invocable as a shell command template.
  * Placeholders: {{prompt}} (task text), {{workspace}} (workspace path).
  * The child runs with cwd = workspace.

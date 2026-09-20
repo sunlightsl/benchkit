@@ -21,7 +21,7 @@
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { dshAdapter, commandAdapter } from '../src/adapters.mjs'
+import { dshAdapter, commandAdapter, acpAdapter } from '../src/adapters.mjs'
 import { abs, appendRecord, digestOverlay, discoverTasks, runTask, writeReport } from '../src/runner.mjs'
 
 const KIT_ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -48,10 +48,12 @@ Usage:
   node bin/benchkit.mjs run --adapter command --cmd '<template>' [options]
 
 Options:
-  --adapter dsh|command   agent integration (default dsh)
+  --adapter dsh|command|acp   agent integration (default dsh)
   --dsh-repo <abs path>   deepseek-harness checkout for the dsh adapter
   --cmd <template>        command template; {{workspace}}/{{prompt}} placeholders
                           (no {{prompt}} = prompt piped via stdin)
+  --acp-cmd <command>     launch command for an ACP v1 server (adapter acp),
+                          e.g. 'node "<repo>/apps/cli/lib/bin.js" --profile acp'
   --home <path>           DSH_HOME for the dsh adapter
   --tasks-dir <path>      task library (default <kit>/tasks)
   --state-dir <path>      results + reports (default <cwd>/state)
@@ -98,8 +100,14 @@ if (arg('adapter', 'dsh') === 'dsh') {
   } catch (error) {
     dieUsage(error.message)
   }
+} else if (arg('adapter') === 'acp') {
+  try {
+    adapter = acpAdapter({ command: arg('acp-cmd', process.env.BENCHKIT_ACP_CMD), home: HOME })
+  } catch (error) {
+    dieUsage(error.message)
+  }
 } else {
-  dieUsage(`--adapter must be dsh|command, got "${arg('adapter')}"`)
+  dieUsage(`--adapter must be dsh|command|acp, got "${arg('adapter')}"`)
 }
 
 const OVERLAY_DIGEST = digestOverlay(OVERLAY)

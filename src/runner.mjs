@@ -135,6 +135,12 @@ export function runTask(task, {
       // Second insurance: never let a wedged child hold the turn open.
       setTimeout(() => { try { child.kill('SIGKILL') } catch { /* dead */ } }, 5000).unref()
     }, task.timeoutMs)
+    const settleOnce = (run) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolveRun(finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailures, requireSuccess }))
+    }
     // setEncoding buffers split multi-byte UTF-8 across chunks (avoids U+FFFD).
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
@@ -143,15 +149,30 @@ export function runTask(task, {
       else stdoutDropped += d.length
     })
     child.stderr.on('data', (d) => { stderrTail = (stderrTail + d).slice(-STDERR_TAIL_CHARS) })
-    const settleOnce = (run) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      resolveRun(finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailures, requireSuccess }))
+    // Conversational adapters (e.g. ACP) own the protocol after spawn; unlike
+    // one-shot CLIs their server stays alive after the turn. Settle only AFTER
+    // the child is gone: on Windows a live child's cwd lock makes the workspace
+    // directory undeletable (EPERM), so the runner must reap first, then settle.
+    if (typeof adapter.drive === 'function') {
+      let driveResult
+      let driveError
+      Promise.resolve()
+        .then(() => adapter.drive({ child, prompt: task.prompt, workspace: ws, env }))
+        .then((r) => { driveResult = r }, (e) => { driveError = String(e) })
+        .finally(() => {
+          killTree(child)
+          const grace = setTimeout(() => settleOnce({ exitCode: driveError ? 1 : 0, driveResult, driveError, stderrTail, timedOut }), 3000)
+          child.once('close', () => {
+            clearTimeout(grace)
+            settleOnce({ exitCode: driveError ? 1 : 0, driveResult, driveError, stderrTail, timedOut })
+          })
+        })
+      child.on('error', (error) => settleOnce({ spawnError: String(error) }))
+    } else {
+      // Node can emit both 'error' and 'close' for one spawn failure; guard.
+      child.on('error', (error) => settleOnce({ spawnError: String(error) }))
+      child.on('close', (code) => settleOnce({ exitCode: code, stdout, stdoutDropped, stderrTail, timedOut }))
     }
-    // Node can emit both 'error' and 'close' for one spawn failure; guard.
-    child.on('error', (error) => settleOnce({ spawnError: String(error) }))
-    child.on('close', (code) => settleOnce({ exitCode: code, stdout, stdoutDropped, stderrTail, timedOut }))
   })
 }
 
@@ -163,11 +184,14 @@ function finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailu
       try { events.push(JSON.parse(line)) } catch { /* non-JSON agent output */ }
     }
   }
-  const toolCalls = events.filter((e) => e.type === 'tool_call').length
+  const driveText = run.driveResult && typeof run.driveResult.text === 'string' ? run.driveResult.text : undefined
+  const toolCalls = run.driveResult ? (run.driveResult.toolCalls ?? 0) : events.filter((e) => e.type === 'tool_call').length
   const finalEvent = events.find((e) => e.type === 'final')
   const errorEvent = events.find((e) => e.type === 'error')
-  const turnEnd = run.timedOut ? 'timeout' : (run.spawnError ? 'spawn-error' : (run.exitCode === 0 ? 'completed' : 'failed'))
-  const eventParseWarning = adapter.expectsEvents && run.stdout.trim().length > 0 && events.length === 0
+  const turnEnd = run.driveError
+    ? 'failed'
+    : (run.timedOut ? 'timeout' : (run.spawnError ? 'spawn-error' : (run.exitCode === 0 ? 'completed' : 'failed')))
+  const eventParseWarning = adapter.expectsEvents && !run.driveResult && run.stdout.trim().length > 0 && events.length === 0
     ? 'non-empty stdout but zero parseable events'
     : undefined
 
@@ -226,8 +250,8 @@ function finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailu
     turnEnd,
     agentExitCode: run.exitCode ?? null,
     ...(run.exitCode !== undefined && run.exitCode !== 0 ? { agentOutcome: 'failed' } : {}),
-    finalText: finalEvent && typeof finalEvent.text === 'string' ? finalEvent.text.slice(0, 500) : null,
-    agentError: errorEvent ? String(errorEvent.message ?? '').slice(0, 300) : null,
+    finalText: driveText !== undefined ? driveText.slice(0, 500) : (finalEvent && typeof finalEvent.text === 'string' ? finalEvent.text.slice(0, 500) : null),
+    agentError: run.driveError ?? (errorEvent ? String(errorEvent.message ?? '').slice(0, 300) : null),
     verifier: {
       status: verifierStatus,
       exitCode: verify.status,
@@ -257,10 +281,16 @@ function finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailu
       }
       record.keptWorkspace = keepDir
     } catch {
-      rmSync(ws, { recursive: true, force: true })
+      try { rmSync(ws, { recursive: true, force: true }) } catch { /* leave the temp dir */ }
     }
   } else {
-    rmSync(ws, { recursive: true, force: true })
+    try {
+      rmSync(ws, { recursive: true, force: true })
+    } catch {
+      // Windows can hold the dir handle briefly after child death; a leaked
+      // temp dir beats a crashed run.
+      record.workspaceCleanup = 'failed'
+    }
   }
   return record
 }

@@ -9,7 +9,8 @@
   "scripts": {
     "selfcheck": "node tests/selfcheck.mjs",
     "e2e": "node tests/mock-agent-e2e.mjs",
-    "test:edge": "node tests/runner-edge.mjs"
+    "test:edge": "node tests/runner-edge.mjs",
+    "test:acp": "node tests/acp-mock-e2e.mjs"
   },
   "files": ["bin", "src", "tasks", "docs"],
   "keywords": ["agent", "benchmark", "eval", "safety", "regression-testing"]

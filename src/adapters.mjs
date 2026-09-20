@@ -73,6 +73,9 @@ export function commandAdapter({ template } = {}) {
         ...SPAWN_BASE,
       })
       if (viaStdin) {
+        // A fast-exiting agent (or a >64 KiB prompt) can EPIPE the pipe; an
+        // unhandled 'error' here would crash the whole run.
+        child.stdin.on('error', () => { /* the child's exit path owns the verdict */ })
         child.stdin.write(prompt)
         child.stdin.end()
       }

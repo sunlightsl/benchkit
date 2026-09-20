@@ -33,7 +33,9 @@ const TARGET = resolve(arg('target', '.'))
 const HOME = arg('home', undefined)
 const REPO = arg('dsh-repo', process.env.DSH_REPO)
 const PERSONAS = arg('personas', 'correctness,security,docs').split(',')
-const TIMEOUT_MS = Number(arg('timeout', '600000'))
+const TIMEOUT_RAW = arg('timeout', '600000')
+const TIMEOUT_MS = Number(TIMEOUT_RAW)
+if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS < 1000) die(`--timeout must be a number of milliseconds >= 1000, got "${TIMEOUT_RAW}"`)
 const OUT_ROOT = resolve(TARGET, arg('out', 'state/reviews'))
 
 // --files: explicit comma-separated paths relative to TARGET,
@@ -92,12 +94,18 @@ function runPersona(persona) {
       return
     }
     let stdout = ''
+    let stdoutDropped = 0
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
       killTree(child)
     }, TIMEOUT_MS)
-    child.stdout.on('data', (d) => { stdout += d })
+    // Same UTF-8 discipline as the runner: decode with buffering, cap the cap.
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (d) => {
+      if (stdout.length < 200_000) stdout += d
+      else stdoutDropped += d.length
+    })
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', () => { /* drain: a full pipe buffer would block the child */ })
     child.on('error', (error) => {

@@ -10,8 +10,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 
-const STDOUT_CAP_BYTES = 200_000
-const STDERR_TAIL_BYTES = 2_000
+const STDOUT_CAP_CHARS = 200_000
+const STDERR_TAIL_CHARS = 2_000
 const TASK_ID_RE = /^[a-z0-9][a-z0-9-]*$/
 
 export const now = () => new Date().toISOString()
@@ -43,18 +43,19 @@ export function discoverTasks(tasksDir, { set = 'dev', taskFilter } = {}) {
 /** Content digest of an overlay directory ("" when absent), platform-stable. */
 export function digestOverlay(overlay) {
   if (!overlay || !existsSync(overlay)) return ''
+  const root = resolve(overlay)
   const hash = createHash('sha1')
   const walk = (d) => {
     for (const name of readdirSync(d).sort()) {
       const p = join(d, name)
       if (statSync(p).isDirectory()) walk(p)
       else {
-        hash.update(p.slice(overlay.length).replace(/\\/g, '/'))
+        hash.update(p.slice(root.length).replace(/\\/g, '/'))
         hash.update(readFileSync(p))
       }
     }
   }
-  walk(overlay)
+  walk(root)
   return hash.digest('hex').slice(0, 12)
 }
 
@@ -76,13 +77,15 @@ export function killTree(child) {
   }
 }
 
-/** Environment for the verifier: minimal and secret-scrubbed. verify.mjs is
- * arbitrary code from the task package; it must not inherit API keys. */
+/** Environment for the verifier: whitelist only. verify.mjs is arbitrary code
+ * from the task package; it must not inherit API keys, NODE_OPTIONS, GIT_CONFIG_*
+ * or any other ambient injection surface. Capabilities the verifier needs
+ * (running node, reading the workspace) survive on PATH alone. */
 function verifierEnv(env) {
   const keep = new Set(['PATH', 'Path', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH'])
   const out = {}
   for (const [k, v] of Object.entries(env)) {
-    if (keep.has(k) || !/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(k)) out[k] = v
+    if (keep.has(k)) out[k] = v
   }
   return out
 }
@@ -106,8 +109,10 @@ export function runTask(task, {
   const ws = join(tmpdir(), `benchkit-${task.id}-${randomUUID().slice(0, 8)}`)
   mkdirSync(ws, { recursive: true, mode: 0o700 })
   const fixture = join(task.dir, 'fixture')
-  if (existsSync(fixture)) cpSync(fixture, ws, { recursive: true })
-  if (overlay && existsSync(overlay)) cpSync(overlay, ws, { recursive: true })
+  // verbatimSymlinks: a symlink in a task package stays a symlink instead of
+  // dereferencing secrets from outside the fixture into the workspace.
+  if (existsSync(fixture)) cpSync(fixture, ws, { recursive: true, verbatimSymlinks: true })
+  if (overlay && existsSync(overlay)) cpSync(overlay, ws, { recursive: true, verbatimSymlinks: true })
 
   const t0 = Date.now()
   return new Promise((resolveRun) => {
@@ -134,10 +139,10 @@ export function runTask(task, {
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', (d) => {
-      if (stdout.length < STDOUT_CAP_BYTES) stdout += d
+      if (stdout.length < STDOUT_CAP_CHARS) stdout += d
       else stdoutDropped += d.length
     })
-    child.stderr.on('data', (d) => { stderrTail = (stderrTail + d).slice(-STDERR_TAIL_BYTES) })
+    child.stderr.on('data', (d) => { stderrTail = (stderrTail + d).slice(-STDERR_TAIL_CHARS) })
     const settleOnce = (run) => {
       if (settled) return
       settled = true
@@ -178,9 +183,15 @@ function finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailu
   let verifierSummary = {}
   try {
     const lines = (verify.stdout ?? '').trim().split(/\r?\n/).filter(Boolean)
-    verifierSummary = JSON.parse(lines[lines.length - 1])
+    const parsed = JSON.parse(lines[lines.length - 1])
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('verdict is not an object')
+    verifierSummary = parsed
   } catch {
-    verifierSummary = { parseError: true, raw: (verify.stdout ?? '').slice(0, 200) }
+    verifierSummary = {
+      parseError: true,
+      raw: (verify.stdout ?? '').slice(0, 200),
+      stderr: (verify.stderr ?? '').slice(-300),
+    }
   }
   const summaryPass = typeof verifierSummary.pass === 'boolean' ? verifierSummary.pass : undefined
   // ok: clean verdict. fail: nonzero exit with a verdict. crash: nonzero exit
@@ -209,7 +220,8 @@ function finish(ws, task, t0, run, { adapter, overlayDigest, stateDir, keepFailu
       toolCalls,
       eventsParsed: events.length,
       ...(eventParseWarning ? { eventParseWarning } : {}),
-      ...(run.stdoutDropped ? { stdoutDroppedBytes: run.stdoutDropped } : {}),
+      // stdoutDropped counts UTF-16 code units, not bytes.
+      ...(run.stdoutDropped ? { stdoutDroppedChars: run.stdoutDropped } : {}),
     },
     turnEnd,
     agentExitCode: run.exitCode ?? null,

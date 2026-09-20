@@ -29,7 +29,10 @@ const argv = process.argv.slice(2)
 const command = argv[0] ?? 'run'
 const arg = (name, dflt) => {
   const i = argv.indexOf(`--${name}`)
-  return i >= 0 ? argv[i + 1] : dflt
+  if (i < 0) return dflt
+  const value = argv[i + 1]
+  if (value === undefined || value.startsWith('--')) dieUsage(`--${name} requires a value`)
+  return value
 }
 const flag = (name) => argv.includes(`--${name}`)
 
@@ -61,11 +64,11 @@ Options:
   --require-success       fold the agent's exit code into pass
 `
 
-if (command !== 'run' || flag('help') || flag('h')) {
-  if (command === 'run' && !flag('help') && !flag('h')) dieUsage(`unknown command ${command} (only "run")`)
+if (flag('help') || flag('h')) {
   console.log(USAGE)
   process.exit(0)
 }
+if (command !== 'run') dieUsage(`unknown command ${command} (only "run")`)
 
 const SET = arg('set', 'dev')
 if (!['dev', 'heldout', 'all'].includes(SET)) dieUsage(`--set must be dev|heldout|all, got "${SET}"`)

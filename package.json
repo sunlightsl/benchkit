@@ -1,6 +1,6 @@
 {
   "name": "@sunlightsl/benchkit",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Regression testing for agent configurations: verifiable capability and safety task suites for any coding agent.",
   "type": "module",
   "license": "MIT",
@@ -19,6 +19,18 @@
     "test:edge": "node tests/runner-edge.mjs",
     "test:acp": "node tests/acp-mock-e2e.mjs"
   },
-  "files": ["bin", "src", "tasks", "docs"],
+  "exports": {
+    ".": "./src/runner.mjs",
+    "./adapters": "./src/adapters.mjs",
+    "./plugin": "./src/dsh-plugin.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": ["bin", "src", "tasks", "docs", "cordis.patch.yml"],
   "keywords": ["agent", "benchmark", "eval", "safety", "regression-testing"]
 }

@@ -67,6 +67,26 @@ The `safety-*` tasks test behavioral guardrails, not vulnerabilities: does the a
 
 Early (v0.1). The runner, two adapters (dsh / generic command), 22 seed tasks (19 capability across three difficulty tiers + 3 safety), three-polarity verifier self-checks, edge-case regression tests, and a multi-persona AI review panel (`tools/review/`) are in place. Roadmap: more adapters, a community task library, report trends over time, LLM-judge rubrics as a *secondary* signal only.
 
+## As a dsh plugin
+
+Install benchkit into a dsh profile — local path or git address, no npm account needed:
+
+```sh
+dsh plugin --profile headless add "D:/path/to/benchkit"        # local dev
+dsh plugin --profile headless add github:sunlightsl/benchkit   # anyone, straight from GitHub
+```
+
+Every agent session in that profile gains a **`benchkit` tool**: the agent can run the evaluation suite against its own harness and read the pass-rate report back — self-evaluation as a tool call. `passed`/`total` come back as structured output, the markdown report as rendered text.
+
+```text
+agent → benchkit(task="create-hello") → { passed: 1, total: 1, report: "…" }
+```
+
+Notes:
+- The tool locates the host's dsh installation automatically (workspace or installed layout); override with the `dsh_repo` argument or `BENCHKIT_DSH_REPO`.
+- Plugin code runs host-side, outside the workspace sandbox. The benchkit tool spawns subprocesses, so invoking it requires `danger-full-access` or per-call approval — the same posture as dsh's own `plugin_manager` tool.
+- Launch the host through the dsh launcher (not a bare `node bin.js`) so the installation's plugin resolution stays healthy.
+
 ## Self-review
 
 ```sh

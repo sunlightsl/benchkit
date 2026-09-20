@@ -1,0 +1,4 @@
+# benchkit dsh bundle: mount the benchkit self-evaluation tool on the host.
+- insert:
+    - id: benchkit
+      name: '@sunlightsl/benchkit/plugin'

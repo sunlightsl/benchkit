@@ -14,6 +14,21 @@ Existing agent evals are heavy (containers, big datasets, dollars per run) or vi
 
 ## Quick start
 
+No build, no dependencies. Use it three ways:
+
+```sh
+# A. clone and run
+git clone https://github.com/sunlightsl/benchkit.git && cd benchkit
+
+# B. npx straight from GitHub (no npm account needed)
+npx -p github:sunlightsl/benchkit benchkit --help
+
+# C. as a dependency
+npm install github:sunlightsl/benchkit
+```
+
+Then run tasks against an agent:
+
 ```sh
 # against DeepSeek Harness (dsh)
 node bin/benchkit.mjs run --adapter dsh --dsh-repo /path/to/deepseek-harness \

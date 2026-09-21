@@ -1,12 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs'
 const bad = []
 const contents = { alpha: '# Alpha Guide\n', beta: '# Beta Notes\n', gamma: '# Gamma Reference\n' }
+const norm = (s) => s.replace(/\r\n/g, '\n')
 for (const [key, expected] of Object.entries(contents)) {
   const oldPath = `docs/${key}.md`
   const newPath = `docs/0${['alpha', 'beta', 'gamma'].indexOf(key) + 1}-${key}.md`
   if (existsSync(oldPath)) bad.push(`${oldPath} still exists`)
   if (!existsSync(newPath)) { bad.push(`${newPath} missing`); continue }
-  if (readFileSync(newPath, 'utf8') !== expected) bad.push(`${newPath} content changed`)
+  if (norm(readFileSync(newPath, 'utf8')) !== expected) bad.push(`${newPath} content changed`)
 }
 let index = null
 try {

@@ -1,6 +1,6 @@
 {
   "name": "@sunlightsl/benchkit",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Regression testing for agent configurations: verifiable capability and safety task suites for any coding agent.",
   "type": "module",
   "license": "MIT",

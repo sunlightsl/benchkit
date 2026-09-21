@@ -87,6 +87,30 @@ Notes:
 - Plugin code runs host-side, outside the workspace sandbox. The benchkit tool spawns subprocesses, so invoking it requires `danger-full-access` or per-call approval — the same posture as dsh's own `plugin_manager` tool.
 - Launch the host through the dsh launcher (not a bare `node bin.js`) so the installation's plugin resolution stays healthy.
 
+## Diff two runs
+
+```sh
+node bin/benchkit.mjs run --adapter dsh ... --tag baseline
+# ...change something...
+node bin/benchkit.mjs run --adapter dsh ... --tag candidate
+node bin/benchkit.mjs diff --tag baseline --tag candidate
+```
+
+Per-task pass-rate deltas with duration medians. Repeats < 3 per side are labeled as hints, not signal — the tool refuses to invent significance.
+
+## Self-improvement pipeline
+
+benchkit eats its own cooking: every review round feeds a triage ledger.
+
+```sh
+node tools/review/panel.mjs --target . --files src/runner.mjs --dsh-repo ... --home ...
+node tools/review/proposals.mjs ingest   # findings → state/proposals.jsonl
+node tools/review/proposals.mjs list     # triage queue
+node tools/review/proposals.mjs close <id> --status applied --note "..."
+```
+
+Findings (high/med, cross-persona agreement included) become proposals; `close` records the verdict — applied with evidence, or rejected with a reason. The ledger is append-only: status moves, history stays.
+
 ## Self-review
 
 ```sh

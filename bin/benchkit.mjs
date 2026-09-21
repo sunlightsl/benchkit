@@ -46,6 +46,7 @@ const USAGE = `benchkit — regression testing for agent configurations
 Usage:
   node bin/benchkit.mjs run --adapter dsh --dsh-repo <abs path> [options]
   node bin/benchkit.mjs run --adapter command --cmd '<template>' [options]
+  node bin/benchkit.mjs diff --tag baseline --tag candidate [--state-dir <path>]
 
 Options:
   --adapter dsh|command|acp   agent integration (default dsh)
@@ -70,7 +71,27 @@ if (flag('help') || flag('h')) {
   console.log(USAGE)
   process.exit(0)
 }
-if (command !== 'run') dieUsage(`unknown command ${command} (only "run")`)
+if (command !== 'run' && command !== 'diff') dieUsage(`unknown command ${command} (run | diff)`)
+
+if (command === 'diff') {
+  const { loadResults, diffTags, renderDiff } = await import('../src/diff.mjs')
+  const tagA = arg('tag-a', arg('a'))
+  const tagB = arg('tag-b', arg('b'))
+  const stateDir = abs(process.cwd(), arg('state-dir', 'state'))
+  // Support `--tag baseline --tag candidate` (first two --tag occurrences).
+  const tagIdx = argv.reduce((acc, v, i) => (v === '--tag' ? [...acc, argv[i + 1]] : acc), [])
+  const [t1, t2] = tagA && tagB ? [tagA, tagB] : tagIdx
+  if (!t1 || !t2) dieUsage('diff needs two tags: --tag <a> --tag <b> (or --tag-a/--tag-b)')
+  let diff
+  try {
+    diff = diffTags(loadResults(stateDir), t1, t2)
+  } catch (error) {
+    dieUsage(error.message)
+  }
+  const out = renderDiff(diff)
+  console.log(out)
+  process.exit(0)
+}
 
 const SET = arg('set', 'dev')
 if (!['dev', 'heldout', 'all'].includes(SET)) dieUsage(`--set must be dev|heldout|all, got "${SET}"`)
